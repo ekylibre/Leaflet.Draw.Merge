@@ -16,7 +16,7 @@ module.exports = {
       }
     ]
   },
-  entry: ['./src/leaflet.draw.merge.coffee', './src/leaflet.draw.merge.scss'],
+  entry: ['./src/leaflet.draw.merge.coffee', './src/util.coffee', './src/leaflet.draw.merge.scss'],
   output: {
     path: __dirname + '/dist',
     filename: 'leaflet.draw.merge.js'

@@ -26,7 +26,10 @@
     "webpack": "^3.6.0"
   },
   "dependencies": {
+    "@turf/boolean-overlap": "^4.7.3",
+    "@turf/flip": "^4.7.3",
     "@turf/meta": "^5.0.2",
+    "@turf/union": "^5.0.0",
     "geographiclib": "^1.49.0",
     "leaflet": "^1.2.0",
     "leaflet-draw": "^0.4.12",

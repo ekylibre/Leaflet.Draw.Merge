@@ -3,6 +3,9 @@ _ = require 'lodash'
 
 turf = require '@turf/helpers'
 turfMeta = require '@turf/meta'
+turfBooleanOverlap = require '@turf/boolean-overlap'
+turfUnion = require '@turf/union'
+booleanPointOnLine = require '@turf/boolean-point-on-line'
 require 'leaflet-geometryutil'
 
 L.Merging = {}
@@ -44,13 +47,26 @@ class L.Merge extends L.Handler
     @_availableLayers.on 'layeradd', @_enableLayer, @
     @_availableLayers.on 'layerremove', @_disableLayer, @
 
+    @_featureGroup.on 'layeradd', @refreshAvailableLayers, @
+    @_featureGroup.on 'layerremove', @refreshAvailableLayers, @
+
+    # poly = new L.Polygon [[45.824114, -0.796735],[45.824368, -0.795362],[45.82453, -0.794588],[45.826915, -0.795758],[45.826863, -0.796927],[45.825629, -0.79771],[45.824114, -0.796735]]
+    # @_featureGroup.addData poly.toGeoJSON()
+    poly = new L.Polygon [[[45.824114, -0.796735],[45.824244,-0.796029],[45.824409,-0.795145],[45.824509,-0.794611],[45.824811,-0.795321],[45.824579, -0.79664],[45.824114, -0.796735]]]
+    @_featureGroup.addData poly.toGeoJSON()
+
+    poly2 = new L.Polygon [[[45.824483, -0.794565],[45.824308, -0.794476],[45.82399, -0.794315],[45.82394, -0.79429],[45.823719,-0.794154],[45.82434,-0.793379],[45.824728,-0.793706],[45.824483,-0.794565]]]
+    @_featureGroup.addData poly2.toGeoJSON()
+
+
+
     @_map.on L.Merging.Event.SELECT, @_mergeMode, @
 
     @_map.on 'zoomend moveend', () =>
       @refreshAvailableLayers()
 
     # @_map.on 'mousemove', @_selectLayer, @
-    @_map.on 'mousemove', @_mergeMode, @
+    # @_map.on 'mousemove', @_mergeMode, @
 
   disable: ->
     if !@_enabled
@@ -146,20 +162,28 @@ class L.Merge extends L.Handler
 
     layer.setStyle layer.options.disabled
 
-  _selectLayer: (e) ->
-    # layer = e.target || e.layer || e
-    mouseLatLng = e.latlng
-    for layer in @_availableLayers.getLayers()
-      mousePoint = mouseLatLng.toTurfFeature()
-      polygon = layer.toTurfFeature()
+    layer.bindPopup("stamp" + L.stamp(layer))
+    layer.on 'click', @_activate, @
+    #
+    # poly1 = turf.polygon([[[0,0],[0,5],[5,5],[5,0],[0,0]]])
+    # poly2 = turf.polygon([[[1,1],[1,6],[6,6],[6,1],[1,1]]])
+    #
+    # poly1Leaf = new L.Polygon []
+    # poly1Leaf.fromTurfFeature(poly1)
+    # poly1Leaf.addTo @_map
+    #
+    # poly2Leaf = new L.Polygon []
+    # poly2Leaf.fromTurfFeature(poly2)
+    # poly2Leaf.addTo @_map
+    #
+    # console.error turfBooleanOverlap(poly1, poly2)
+    #
+    # union = turfUnion.default(poly1, poly2)
+    # poly3 = new L.Polygon [], color: 'red'
+    # console.error union
+    # poly3.fromTurfFeature(union)
+    # poly3.addTo @_map
 
-      if turfinside.default(mousePoint, polygon)
-        if layer != @_activeLayer
-          @_activate layer, mouseLatLng
-        return
-
-    if @_activeLayer && !@_activeLayer.glue
-      @_unselectLayer @_activeLayer
 
   _unselectLayer: (e) ->
     layer = e.layer or e.target or e
@@ -167,11 +191,11 @@ class L.Merge extends L.Handler
     if @options.selectedPathOptions
       layer.setStyle layer.options.disabled
 
-    if layer.merging
-      layer.merging.disable()
-      delete layer.merging
+    # if layer.merging
+      # layer.merging.disable()
+      # delete layer.merging
 
-    @_map.on 'mousemove', @_selectLayer, @
+    # @_map.on 'mousemove', @_selectLayer, @
 
     @_activeLayer = null
 
@@ -186,7 +210,7 @@ class L.Merge extends L.Handler
     delete layer.options.selected
     delete layer.options.original
 
-  _activate: (e, latlng) ->
+  _activate: (e) ->
     layer = e.target || e.layer || e
 
     if !layer.selected
@@ -198,20 +222,89 @@ class L.Merge extends L.Handler
 
       @_activeLayer = layer
 
-      @_map.fire L.Merging.Event.SELECT, layer: @_activeLayer, latlng: latlng
+      @_map.fire L.Merging.Event.SELECT, layer: @_activeLayer
     else
       layer.selected = false
       layer.setStyle(layer.options.disabled)
 
-      @_activeLayer.merging.disable()
-      delete @_activeLayer.merging
-
       @_activeLayer = null
       @_map.fire L.Merging.Event.UNSELECT, layer: layer
+
+  _mergeMode: ->
+
+    i = 0
+    k = 0
+
+    # for p in @_activeLayer.getLatLngs()[0][0]
+      # console.error p
+      # L.marker(p).addTo @_map
+
+    #find contiguous polygons
+    @_availableLayers.eachLayer (layer) =>
+      if L.stamp(layer) != L.stamp(@_activeLayer) && k == 0
+
+        console.error "try:", L.stamp(layer)
+        activePoly = @_activeLayer.toTurfFeature()
+        turfLayer = layer.toTurfFeature()
+
+        console.error activePoly, turfLayer
+
+        overlap = turfBooleanOverlap(activePoly, turfLayer)
+
+        console.error overlap
+
+        if overlap
+          console.error turfLayer.geometry.coordinates
+
+          outerRing = @_activeLayer.outerRingAsTurfLineString()
+
+          j = 0
+
+          turfCoords = []
+
+          for coord in turfLayer.geometry.coordinates[0]
+            closest = undefined
+            coord2 = undefined
+
+            if j == 1 || j == 2
+              closest = L.GeometryUtil.closest(@_map, @_activeLayer, L.latLng(coord[1], coord[0]))
+              console.error "closest:", closest
+
+            if closest
+              coord2 = [closest.lng, closest.lat]
+              console.error 'prev: ', coord, 'next:',coord2
+              console.error 'retest', L.GeometryUtil.closest(@_map, @_activeLayer, L.latLng(coord2[1], coord2[0]))
+
+            if coord2
+              point = turf.point(coord2)
+              pt = L.latLng(coord2[1], coord2[0])
+              turfCoords.push coord2
+
+            else
+              point = turf.point(coord)
+              pt = L.latLng(coord[1], coord[0])
+              turfCoords.push coord
+
+            console.error point
+            L.marker(pt).addTo @_map
+            console.error 'on the line:',booleanPointOnLine.default(point, outerRing)
+            j++
+
+          turfPoly = turf.polygon([turfCoords])
+          console.error turfPoly
+          union = turfUnion.default(activePoly, turfPoly)
+          poly3 = new L.Polygon [], color: 'red'
+          console.error union
+          poly3.fromTurfFeature(union)
+          poly3.addTo @_map
+
+          k = 1
+
+        i++
 
   _merge: (->)
 
   _hasAvailableLayers: ->
-    @_availableLayers.length != 0
+    @_availableLayers.getLayers().length != 0
 
 L.Merge.include L.Mixin.Events
